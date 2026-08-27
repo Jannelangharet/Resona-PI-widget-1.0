@@ -1,5 +1,4 @@
 import { sites } from "@openai/sites-vite-plugin";
-import tailwindcss from "@tailwindcss/postcss";
 import vinext from "vinext";
 import { defineConfig, type ViteDevServer } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -46,7 +45,6 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
