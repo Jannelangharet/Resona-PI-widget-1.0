@@ -1,4 +1,4 @@
-import { type Mapping, type Space } from "./metrics";
+import { cell, type Mapping, type Space } from "./metrics";
 import { type API, timed } from "./streambim";
 import { traced } from "./diagnostics";
 export type Rule = {
@@ -29,22 +29,16 @@ export function selectionQuery(
     throw new Error(
       "Urvalet innehåller objekt utan GUID. StreamBIM-filtret ändras inte eftersom hela urvalet inte kan identifieras.",
     );
-  if (rows.length > 10000)
+  if (rows.length > 5000)
     throw new Error(
-      "Urvalet är för stort för modellsynk (max 10 000 objektrader). Begränsa med plan eller trapphus.",
+      "Urvalet är för stort för modellsynk (max 5 000 objektrader). Begränsa med plan eller trapphus.",
     );
-  // Two contradictory GUID predicates mean an empty result, never an empty/all query.
+  // StreamBIM stops its scene search for zero hits. Do not claim an empty model selection.
   if (!rows.length)
-    return {
-      rules: [
-        ["0000000000000000000000", "1111111111111111111111"].map((guid) => ({
-          buildingId,
-          propKey: "@guid",
-          propValue: guid,
-        })),
-      ],
-    };
-  const groups = rows.map((row) => {
+    throw new Error(
+      "Tomt widgeturval. StreamBIM behåller föregående modellfilter; välj ett urval med objekt för att synka.",
+    );
+  const groups = rows.flatMap((row) => {
     const rules: Rule[] = [
       { buildingId, propKey: "@guid", propValue: row.guid },
     ];
@@ -54,7 +48,12 @@ export function selectionQuery(
       rules.push(propertyRule(buildingId, mapping.floor, row.floor));
     if (row.stair !== "Saknar trapphus")
       rules.push(propertyRule(buildingId, mapping.stair, row.stair));
-    return rules;
+    // Explicit kind is essential: the viewer uses it to keep space meshes visible.
+    // Older exports may omit kind, so include BOTH alternatives as separate OR groups.
+    return (row.kind ? [row.kind] : ["Space", "Spatial zone"]).map((kind) => [
+      ...rules,
+      { buildingId, propKey: "@kind", propValue: kind },
+    ]);
   });
   const unique = new Map(groups.map((r) => [JSON.stringify(r), r]));
   return { rules: [...unique.values()] };
@@ -65,6 +64,7 @@ export async function applySelection(
   buildingId: string,
   query: SelectionQuery,
   isCurrent: () => boolean,
+  expectedRows: Space[],
 ) {
   const [project, building] = await Promise.all([
     timed(api.getProjectId()),
@@ -77,6 +77,64 @@ export async function applySelection(
   if (!isCurrent()) return false;
   if (!api.applyObjectSearch)
     throw new Error("StreamBIM-versionen saknar applyObjectSearch.");
+  if (!api.getObjectInfoForSearch)
+    throw new Error(
+      "StreamBIM saknar sökverifiering. Modellfiltret lämnas oförändrat.",
+    );
+  const preflight = {
+    filter: structuredClone(query),
+    page: { limit: 5000, skip: 0 },
+    fieldUnion: true,
+  };
+  const matched = await traced(
+    "StreamBIM.API.getObjectInfoForSearch · verifiering",
+    preflight,
+    async () => {
+      const raw = await timed(api.getObjectInfoForSearch!(preflight));
+      const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!result || !Array.isArray(result.data))
+        throw new Error(
+          "Sökverifieringen saknar objektlista. Modellfiltret lämnas oförändrat.",
+        );
+      const actual: unknown[] = result.data;
+      const total = result.meta?.total ?? result.meta?.totalCount;
+      if (total != null && Number(total) !== actual.length)
+        throw new Error("Sökverifieringen är ofullständig. Begränsa urvalet.");
+      if (actual.some((r) => !r || typeof r !== "object" || Array.isArray(r)))
+        throw new Error("Ogiltigt söksvar från StreamBIM.");
+      const counts = (guids: string[]) => {
+        const map = new Map<string, number>();
+        for (const guid of guids) map.set(guid, (map.get(guid) || 0) + 1);
+        return [...map].sort(([a], [b]) => a.localeCompare(b));
+      };
+      const guids = actual.map((r) =>
+        cell(r as Record<string, unknown>, "GUID"),
+      );
+      if (
+        guids.some((g) => !g) ||
+        JSON.stringify(counts(guids)) !==
+          JSON.stringify(counts(expectedRows.map((r) => r.guid)))
+      )
+        throw new Error(
+          `StreamBIM hittar ${actual.length} objektrader, widgeten ${expectedRows.length}, eller andra GUID. Kontrollera klippning, aktuella modeller och uppdatera data. Föregående modellfilter behålls.`,
+        );
+      return actual.length;
+    },
+    (count) => ({
+      matchedRows: count,
+      expectedRows: expectedRows.length,
+      guidsMatch: true,
+    }),
+  );
+  if (!isCurrent()) return false;
+  if (
+    String(await timed(api.getProjectId())) !== projectId ||
+    String(await timed(api.getBuildingId())) !== buildingId
+  )
+    throw new Error(
+      "Projektet byttes under verifieringen. Uppdatera data först.",
+    );
+  if (!isCurrent()) return false;
   // Do not race this mutation against a timeout: a late completion could overwrite a newer filter.
   // The serial queue waits for the actual RPC settlement before applying the latest filter.
   await traced(
@@ -93,7 +151,7 @@ export async function applySelection(
       returnedGuids: Array.isArray(r) ? r.length : undefined,
     }),
   );
-  return true;
+  return { matchedRows: matched };
 }
 export function latestQueue() {
   let revision = 0,

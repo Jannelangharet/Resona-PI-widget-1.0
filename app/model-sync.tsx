@@ -38,6 +38,7 @@ export default function ModelSync({
     queryError =
       e instanceof Error ? e.message : "Urvalet kan inte synkroniseras.";
   }
+  const expectedString = JSON.stringify(rows.map((r) => ({ guid: r.guid })));
   const syncKey = JSON.stringify([
     projectId,
     buildingId,
@@ -45,6 +46,7 @@ export default function ModelSync({
     queryString,
     retry,
     enabled,
+    expectedString,
   ]);
   useEffect(() => {
     const currentQueue = queue;
@@ -76,12 +78,13 @@ export default function ModelSync({
               buildingId,
               JSON.parse(queryString) as SelectionQuery,
               () => active && isCurrent(),
+              JSON.parse(expectedString) as Space[],
             );
             if (active && isCurrent() && applied)
               setStatus({
                 key: syncKey,
                 state: "success",
-                text: "Urvalet är applicerat i StreamBIM",
+                text: `Utrymmessökning skickad · ${applied.matchedRows} objektrader verifierade före applicering`,
               });
           } catch (e) {
             if (active && isCurrent())
@@ -113,6 +116,7 @@ export default function ModelSync({
     queryError,
     syncKey,
     queue,
+    expectedString,
   ]);
   const live = source === "live",
     current = status.key === syncKey;
@@ -190,13 +194,11 @@ export default function ModelSync({
       <p role="status">{message}</p>
       {zoomError && <p role="alert">{zoomError}</p>}
       <p className="sync-note">
-        {scope === "Objektlistan"
-          ? "Söktext och objekttyp styr modellurvalet. Nyckeltalen nedan följer plan och trapphus."
-          : "Hela urvalet synkas, oberoende av objektlistans sidindelning."}{" "}
-        Filtreringen ersätter StreamBIMs aktiva sökning, utan att flytta
-        kameran. Återställ filter visar hela urvalet i aktuell vy igen.
-        Återanvända GUID i olika modeller kan inte alltid särskiljas; jämför
-        även objektrader och egenskaper.
+        Hela det markerade urvalet synkas, oberoende av sidindelning och vald
+        flik. Filtreringen ersätter StreamBIMs aktiva sökning, utan att flytta
+        kameran. Klippning kan begränsa modellens sökresultat. Återställ filter
+        visar hela widgeturvalet igen. Återanvända GUID i olika modeller kan
+        inte alltid särskiljas; jämför även objektrader och egenskaper.
       </p>
     </section>
   );

@@ -100,3 +100,39 @@ test("A project switch during the fetch invalidates the result", async () => {
 test("Timeout is bounded", async () => {
   await assert.rejects(timed(new Promise(() => {}), 5), /tid/);
 });
+test("Fetch retrieves all five categories from the current project without truncating the original ones", async () => {
+  const words: string[] = [];
+  const api = {
+    getProjectId: async () => "current",
+    getBuildingId: async () => "building",
+    makeApiRequest: async (req: Record<string, unknown>) => {
+      assert.ok(String(req.url).includes("/project-current/"));
+      if (req.method === "POST") {
+        const body = req.body as ReturnType<typeof searchRules>;
+        const word = body.rules[0][1].propValue;
+        words.push(word);
+        return { searchId: word };
+      }
+      const url = new URL(String(req.url), "https://example.test"),
+        word = url.searchParams.get("searchId")!;
+      return { data: [{ GUID: word, "Long Name": word }], meta: { total: 1 } };
+    },
+  } as unknown as API;
+  const data = await fetchDataset(api);
+  assert.deepEqual(words, ["ROK", "LBTA", "MBTA", "LOFT", "LOKAL"]);
+  assert.equal(data.mbta?.length, 1);
+  assert.equal(data.loft?.length, 1);
+  assert.equal(data.lokal?.length, 1);
+});
+test("Ambiguous category names cannot silently double-count areas", async () => {
+  const api = {
+    makeApiRequest: async (req: Record<string, unknown>) =>
+      req.method === "POST"
+        ? { searchId: "S" }
+        : { data: [{ GUID: "x", "Long Name": "2 ROK LOFT" }] },
+  } as unknown as API;
+  await assert.rejects(
+    fetchCategory(api, "p", "b", "ROK", defaultMapping, () => {}),
+    /flera areakategorier/,
+  );
+});

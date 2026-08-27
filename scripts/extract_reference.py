@@ -17,7 +17,8 @@ def rows(keyword):
     return json.loads(table.loc[description.str.contains(keyword, case=False), fields].to_json(orient='records', double_precision=15))
 result = {'source': 'reference', 'projectId': str(table['Project id'].dropna().iloc[0]),
           'projectName': str(table['Project name'].dropna().iloc[0]), 'buildingId': 'not-recorded',
-          'capturedAt': datetime.now(timezone.utc).isoformat(), 'rok': rows('ROK'), 'lbta': rows('LBTA')}
+          'capturedAt': datetime.now(timezone.utc).isoformat(),
+          **{category.lower(): rows(category) for category in ['ROK','LBTA','MBTA','LOFT','LOKAL']}}
 output = Path(sys.argv[2])
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')

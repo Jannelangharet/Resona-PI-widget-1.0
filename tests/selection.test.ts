@@ -7,6 +7,7 @@ import { clearLogs, getLogs } from "../lib/diagnostics";
 const rows = normalizeRows(
   Array.from({ length: 308 }, (_, i) => ({
     GUID: `guid-${i}`,
+    "IFC Type": "IfcSpace",
     "Long Name": "2 ROK",
     "BIP_Läge~Våning": String(i % 10),
     "BIP_Läge~Trapphus": "A",
@@ -48,15 +49,14 @@ test("Identical groups are deduplicated without modifying counts or inventing mi
   const r = { ...rows[0], floor: "Saknar plan", stair: "Saknar trapphus" };
   const q = selectionQuery([r, r], "b", defaultMapping);
   assert.equal(q.rules.length, 1);
-  assert.equal(q.rules[0].length, 2);
+  assert.equal(q.rules[0].length, 3);
   assert.equal(rows.length, 308);
 });
-test("Empty results form a contradictory AND group, never an empty/all-object query", () => {
-  const q = selectionQuery([], "b", defaultMapping);
-  assert.equal(q.rules.length, 1);
-  assert.equal(q.rules[0].length, 2);
-  assert.ok(q.rules[0].every((r) => r.propKey === "@guid"));
-  assert.notEqual(q.rules[0][0].propValue, q.rules[0][1].propValue);
+test("Empty selection never clears the viewer's existing filter", () => {
+  assert.throws(
+    () => selectionQuery([], "b", defaultMapping),
+    /Tomt widgeturval/,
+  );
 });
 test("Missing GUID and oversized selection are rejected rather than partially applied", () => {
   assert.throws(
@@ -64,8 +64,8 @@ test("Missing GUID and oversized selection are rejected rather than partially ap
     /utan GUID/,
   );
   assert.throws(
-    () => selectionQuery(Array(10001).fill(rows[0]), "b", defaultMapping),
-    /10 000/,
+    () => selectionQuery(Array(5001).fill(rows[0]), "b", defaultMapping),
+    /5 000/,
   );
 });
 test("Mutation checks project/building and stale work; applies exact root query with replace=true", async () => {
@@ -73,6 +73,7 @@ test("Mutation checks project/building and stale work; applies exact root query 
   const api = {
     getProjectId: async () => "p",
     getBuildingId: async () => "b",
+    getObjectInfoForSearch: async () => ({ data: [{ GUID: rows[0].guid }] }),
     applyObjectSearch: async (...args: unknown[]) => {
       calls.push(args);
       return true;
@@ -80,16 +81,22 @@ test("Mutation checks project/building and stale work; applies exact root query 
   } as unknown as API;
   const q = selectionQuery(rows.slice(0, 1), "b", defaultMapping);
   await assert.rejects(
-    applySelection(api, "different-project", "b", q, () => true),
+    applySelection(api, "different-project", "b", q, () => true, [rows[0]]),
     /bytts/,
   );
   await assert.rejects(
-    applySelection(api, "p", "different-building", q, () => true),
+    applySelection(api, "p", "different-building", q, () => true, [rows[0]]),
     /bytts/,
   );
-  assert.equal(await applySelection(api, "p", "b", q, () => false), false);
+  assert.equal(
+    await applySelection(api, "p", "b", q, () => false, [rows[0]]),
+    false,
+  );
   assert.equal(calls.length, 0);
-  assert.equal(await applySelection(api, "p", "b", q, () => true), true);
+  assert.deepEqual(
+    await applySelection(api, "p", "b", q, () => true, [rows[0]]),
+    { matchedRows: 1 },
+  );
   assert.deepEqual(calls, [[q, true]]);
 });
 test("Failed RPC is surfaced in console and absence of API is not silently ignored", async () => {
@@ -98,16 +105,17 @@ test("Failed RPC is surfaced in console and absence of API is not silently ignor
     getProjectId: async () => "p",
     getBuildingId: async () => "b",
     applyObjectSearch: async () => false,
+    getObjectInfoForSearch: async () => ({ data: [{ GUID: rows[0].guid }] }),
   } as unknown as API;
-  const q = selectionQuery([], "b", defaultMapping);
+  const q = selectionQuery([rows[0]], "b", defaultMapping);
   await assert.rejects(
-    applySelection(api, "p", "b", q, () => true),
+    applySelection(api, "p", "b", q, () => true, [rows[0]]),
     /accepterade inte/,
   );
   assert.equal(getLogs().at(-1)?.state, "error");
   delete api.applyObjectSearch;
   await assert.rejects(
-    applySelection(api, "p", "b", q, () => true),
+    applySelection(api, "p", "b", q, () => true, [rows[0]]),
     /saknar applyObjectSearch/,
   );
 });
@@ -164,4 +172,123 @@ test("Pausing invalidates pending work and a rejected job does not break the que
     }),
   );
   assert.deepEqual(events, ["false", "resumed"]);
+});
+test("Space mode is explicit in EVERY group, with zone support and fallback for older exports", () => {
+  const known = selectionQuery(rows, "b", defaultMapping);
+  assert.ok(
+    known.rules.every((g) =>
+      g.some((r) => r.propKey === "@kind" && r.propValue === "Space"),
+    ),
+  );
+  const zone = selectionQuery(
+    [{ ...rows[0], kind: "Spatial zone" }],
+    "b",
+    defaultMapping,
+  );
+  assert.equal(zone.rules.length, 1);
+  assert.equal(zone.rules[0].at(-1)?.propValue, "Spatial zone");
+  const unknown = selectionQuery(
+    [{ ...rows[0], kind: undefined }],
+    "b",
+    defaultMapping,
+  );
+  assert.equal(unknown.rules.length, 2);
+  assert.deepEqual(
+    unknown.rules.map((g) => g.at(-1)?.propValue),
+    ["Space", "Spatial zone"],
+  );
+});
+test("No mutation on zero, wrong, clipped, malformed, incomplete or duplicate-mismatched preflight results", async () => {
+  let mutations = 0;
+  const api = {
+    getProjectId: async () => "p",
+    getBuildingId: async () => "b",
+    applyObjectSearch: async () => {
+      mutations++;
+      return true;
+    },
+  } as unknown as API;
+  const q = selectionQuery([rows[0]], "b", defaultMapping);
+  for (const response of [
+    { data: [] },
+    { data: [{ GUID: "other" }] },
+    { data: [{}] },
+    { data: [null] },
+    { data: "bad" },
+    { data: [{ GUID: rows[0].guid }], meta: { total: 2 } },
+    { data: [{ GUID: rows[0].guid }, { GUID: rows[0].guid }] },
+  ]) {
+    api.getObjectInfoForSearch = async () => response;
+    await assert.rejects(
+      applySelection(api, "p", "b", q, () => true, [rows[0]]),
+    );
+  }
+  assert.equal(mutations, 0);
+});
+test("Preflight compares GUID multiplicities, protects query from SDK mutation and ignores stale completion", async () => {
+  const selected = [rows[0], rows[0], rows[1]],
+    q = selectionQuery(selected, "b", defaultMapping),
+    before = JSON.stringify(q);
+  let current = true,
+    mutations = 0;
+  const api = {
+    getProjectId: async () => "p",
+    getBuildingId: async () => "b",
+    getObjectInfoForSearch: async (req: { filter: { rules: unknown[] } }) => {
+      req.filter.rules = [];
+      return JSON.stringify({
+        data: [
+          { GUID: rows[1].guid },
+          { GUID: rows[0].guid },
+          { GUID: rows[0].guid },
+        ],
+      });
+    },
+    applyObjectSearch: async () => {
+      mutations++;
+      return true;
+    },
+  } as unknown as API;
+  assert.deepEqual(
+    await applySelection(api, "p", "b", q, () => current, selected),
+    { matchedRows: 3 },
+  );
+  assert.equal(JSON.stringify(q), before);
+  api.getObjectInfoForSearch = async () => {
+    current = false;
+    return { data: selected.map((r) => ({ GUID: r.guid })) };
+  };
+  assert.equal(
+    await applySelection(api, "p", "b", q, () => current, selected),
+    false,
+  );
+  assert.equal(mutations, 1);
+});
+test("A project switch during preflight prevents applying the old filter", async () => {
+  let project = "p",
+    mutations = 0;
+  const api = {
+    getProjectId: async () => project,
+    getBuildingId: async () => "b",
+    getObjectInfoForSearch: async () => {
+      project = "new";
+      return { data: [{ GUID: rows[0].guid }] };
+    },
+    applyObjectSearch: async () => {
+      mutations++;
+      return true;
+    },
+  } as unknown as API;
+  await assert.rejects(
+    applySelection(
+      api,
+      "p",
+      "b",
+      selectionQuery([rows[0]], "b", defaultMapping),
+      () => true,
+      [rows[0]],
+    ),
+    /byttes/,
+  );
+  assert.equal(mutations, 0);
 });

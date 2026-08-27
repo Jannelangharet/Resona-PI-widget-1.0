@@ -1,4 +1,11 @@
-import { cell, defaultMapping, type Mapping, type RawRow } from "./metrics";
+import {
+  cell,
+  categories,
+  defaultMapping,
+  type Category,
+  type Mapping,
+  type RawRow,
+} from "./metrics";
 import { traced } from "./diagnostics";
 import type { SelectionQuery } from "./selection";
 export type API = {
@@ -11,6 +18,11 @@ export type API = {
     replace?: boolean,
   ) => Promise<unknown>;
   zoomToSearchResult?: () => Promise<unknown>;
+  getObjectInfoForSearch?: (request: {
+    filter: SelectionQuery;
+    page: { limit: number; skip: number };
+    fieldUnion: boolean;
+  }) => Promise<unknown>;
 };
 declare global {
   interface Window {
@@ -30,6 +42,9 @@ export type Dataset = {
   projectName?: string;
   rok: RawRow[];
   lbta: RawRow[];
+  mbta?: RawRow[];
+  loft?: RawRow[];
+  lokal?: RawRow[];
   source: "live" | "reference";
   capturedAt: string;
 };
@@ -39,6 +54,7 @@ const FIELDS = [
   "Name",
   "Long Name",
   "IFC Type",
+  "@kind",
   "File Name",
   "Dimensions~Area",
   "BIP_Läge~Våning",
@@ -148,7 +164,7 @@ export async function fetchCategory(
   api: API,
   projectId: string,
   buildingId: string,
-  keyword: "ROK" | "LBTA",
+  keyword: Category,
   mapping: Mapping,
   onProgress: (text: string) => void,
 ) {
@@ -224,6 +240,17 @@ export async function fetchCategory(
       throw new Error(
         `${keyword}: exporten saknar Long Name eller innehåller objekt utanför sökningen.`,
       );
+    if (
+      page.some(
+        (r) =>
+          categories.filter((c) =>
+            cell(r, "Long Name").toUpperCase().includes(c),
+          ).length > 1,
+      )
+    )
+      throw new Error(
+        `${keyword}: ett Long Name matchar flera areakategorier. Kontrollera namngivningen för att undvika dubbelräkning.`,
+      );
     rows.push(...page);
     skip += page.length;
     onProgress(`${keyword}: ${rows.length} objekt hämtade`);
@@ -270,6 +297,30 @@ export async function fetchDataset(
     mapping,
     onProgress,
   );
+  const mbta = await fetchCategory(
+    api,
+    projectId,
+    buildingId,
+    "MBTA",
+    mapping,
+    onProgress,
+  );
+  const loft = await fetchCategory(
+    api,
+    projectId,
+    buildingId,
+    "LOFT",
+    mapping,
+    onProgress,
+  );
+  const lokal = await fetchCategory(
+    api,
+    projectId,
+    buildingId,
+    "LOKAL",
+    mapping,
+    onProgress,
+  );
   if (
     String(await timed(api.getProjectId())) !== projectId ||
     String(await timed(api.getBuildingId())) !== buildingId
@@ -280,6 +331,9 @@ export async function fetchDataset(
     buildingId,
     rok,
     lbta,
+    mbta,
+    loft,
+    lokal,
     source: "live",
     capturedAt: new Date().toISOString(),
   };

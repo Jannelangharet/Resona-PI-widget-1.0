@@ -1,4 +1,6 @@
 export type RawRow = Record<string, unknown>;
+export const categories = ["ROK", "LBTA", "MBTA", "LOFT", "LOKAL"] as const;
+export type Category = (typeof categories)[number];
 export type Space = {
   key: string;
   guid: string;
@@ -9,7 +11,8 @@ export type Space = {
   stair: string;
   file: string;
   area: number | null;
-  category: "ROK" | "LBTA";
+  category: Category;
+  kind?: "Space" | "Spatial zone";
 };
 export type Mapping = {
   area: string;
@@ -67,6 +70,11 @@ export function normalizeRows(
     return {
       key: `${category}-${i}`,
       category,
+      kind: /spatial.?zone/i.test(cell(r, "@kind") || cell(r, "IFC Type"))
+        ? "Spatial zone"
+        : /space/i.test(cell(r, "@kind") || cell(r, "IFC Type"))
+          ? "Space"
+          : undefined,
       guid: cell(r, "GUID"),
       name:
         cell(r, "Identity Data~LÄGENHET") ||
@@ -74,7 +82,11 @@ export function normalizeRows(
         cell(r, "Identity Data~Number") ||
         "Utan namn",
       longName,
-      type: match ? `${match[1]} ROK` : "Övrig ROK",
+      type: match
+        ? `${match[1]} ROK`
+        : category === "ROK"
+          ? "Övrig ROK"
+          : category,
       floor: cell(r, mapping.floor) || "Saknar plan",
       stair: cell(r, mapping.stair) || "Saknar trapphus",
       file: cell(r, "File Name") || "Ej angiven",

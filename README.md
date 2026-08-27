@@ -1,98 +1,94 @@
 # Resona PI widget 1.0
 
-Första version för **Resona AB**: projektoberoende lägenhetsstatistik och ljus BTA från StreamBIM, utan Power BI i drift.
+Projektoberoende projektinsikt för **Resona AB**, direkt från StreamBIM utan Power BI i drift. Uppdatering **1.2**.
 
 ## Widget-URL
 
 https://jannelangharet.github.io/Resona-PI-widget-1.0/
 
-Lägg URL:en som widget i StreamBIM. Domänen måste vara tillåten och widgeten aktiverad i varje projekt enligt [StreamBIMs integrationsanvisningar](https://github.com/streambim/streambim-widget-api). Att öppna URL:en fristående ger ingen åtkomst till projektdata.
+Öppna URL:en som godkänd widget i StreamBIM. Domänen måste vara tillåten och widgeten aktiverad i projektet enligt [StreamBIMs integrationsanvisningar](https://github.com/streambim/streambim-widget-api). Fristående öppning ger ingen åtkomst till projektdata.
 
-## Funktioner
+## KPI-översikt
 
-- Antal ROK-objektrader, lägenhetsarea, medelarea och ljus BTA.
-- Lägenhetsmix, trapphusfördelning och LBTA per plan.
-- Filter för våningsplan och trapphus, sökbar objektlista, lokal CSV-export och navigering till objekt i live-läge.
-- Datakontroll för saknad area, återkommande GUID och valfria förväntade objektantal.
-- Anpassningsbara egenskaper för area, plan, trapphus och areaenhet.
-- Utfällbar API-konsol med fråge-JSON, status, svarstid, kopiering och rensning.
-- Automatisk koppling från widgetens filter till StreamBIMs aktiva objektsökning.
-- Resonas logotyp och webbpalett: sand, grågrönt, varmgrått och mörk text. Systemtypsnitt används; inga kommersiella fontfiler distribueras.
+- Åtta kort: antal lägenheter, medelstorlek, BOA, LOA, total BTA, ljus BTA, BOA+LOA och yteffektivitet.
+- Tre ringdiagram: ljus/mörk BTA, BOA+LOA/övrig ljus BTA, samma kvot för ett valbart normalplan.
+- Staplade lägenhetstyper per trapphus och jämförande LBTA-/MBTA-staplar per plan.
+- Separata objektdetaljer med sökning, kategorival, CSV-export och navigering till objekt.
+- Datakontroll, anpassningsbara egenskaper och utfällbar API-konsol.
 
-## Filterkoppling (uppdatering 1.1)
+Resonas logotyp och webbpalett behålls. Systemtypsnitt används; kommersiella fontfiler distribueras inte.
 
-**Synka filter med StreamBIM** är på som standard i live-läge och kan pausas.
-Plan och trapphus synkas tillsammans. I objektlistan synkas också söktext och
-ROK/LBTA-val. Hela det filtrerade urvalet skickas, inte bara listans aktuella
-40-raderssida. I areavyn synkas LBTA; i översikt och datakontroll synkas ROK + LBTA.
-Nyckeltalen följer plan och trapphus, inte objektlistans fritextsökning.
+## Beräkningar och urval
 
-`StreamBIM.API.applyObjectSearch({rules: [...]}, true)` ersätter den aktiva
-sökningen. Varje objekt uttrycks som en AND-grupp med `@guid`, Long Name och
-tillgängliga plan-/trapphusegenskaper; grupperna kombineras med OR. Ingen
-kameraförflyttning sker automatiskt. **Visa hela urvalet** zoomar på begäran.
-Inställningen för hur objekt utanför urvalet visas behålls i StreamBIM.
-Återställning visar hela urvalet i aktuell widgetvy, inte andra objekttyper.
+| Nyckeltal       | Definition                                                                          |
+| --------------- | ----------------------------------------------------------------------------------- |
+| Lägenheter      | Antal ROK-objektrader, samma definition i alla kort och staplar som Power BI:s #LGH |
+| Medelstorlek    | ROK-area / antal ROK-rader med giltig area                                          |
+| BOA             | ROK + LOFT                                                                          |
+| LOA             | LOKAL                                                                               |
+| Ljus / mörk BTA | LBTA / MBTA                                                                         |
+| Total BTA       | LBTA + MBTA                                                                         |
+| BOA + LOA       | ROK + LOFT + LOKAL                                                                  |
+| Yteffektivitet  | (BOA + LOA) / LBTA × 100                                                            |
+| Övrig ljus BTA  | LBTA − (ROK + LOFT + LOKAL)                                                         |
 
-Snabba ändringar samlas i 250 ms och skickas i ordning, med endast det senaste
-väntande valet kvar. Ett redan skickat anrop måste slutföras innan nästa skickas;
-paus kan inte återkalla ett sådant anrop. Projekt/byggnad kontrolleras före anropet.
-Tomt urval skickar två motstridiga GUID-villkor (inga träffar). Saknade GUID eller
-över 10 000 rader stoppar synkningen med ett synligt fel i stället för delurval.
-Återanvända GUID med identiska egenskaper i olika modeller kan inte säkert
-särskiljas. Jämför därför objektrader, unika GUID och egenskaper vid verifiering.
+Plan och trapphus avgränsar KPI-kort och jämförelsevärden i ringarna. Diagramval avgränsar **markerat urval**, staplar, objektdetaljer och StreamBIM. Ringarnas nämnare ligger kvar så att en vald sektor inte blir 100 procent. Klick på en geografisk stapel väljer även plan/trapphus. Normalplan är ett separat, uttryckligt jämförelseval med samma trapphusfilter; inget PLAN 11 är hårdkodat. Klick på dess sektor väljer det planet också i huvudfiltret.
 
-Konsolen visar datahämtningens POST-/GET-anrop och modellens sök-/zoom-anrop,
-med frågorna, tidsåtgång och korta svarssammanfattningar. Den behåller högst
-60 anrop i minnet tills sidan laddas om eller loggen rensas. Känsliga fält och
-vanliga tokenformat maskeras; fullständiga lyckade objektsvar loggas inte.
-Projekt-ID, sökvärden och GUID finns i frågorna. Kopiera/dela loggen med omsorg.
+Vald flik och objektlistans sidindelning ändrar aldrig modellurvalet. Kategori-, typ- och textfilter i detaljerna behålls mellan flikar och kan rensas i urvalslisten. Alla filter kan återställas tillsammans.
+
+En restarea är en **beräknad differens, inte ett eget modellobjekt**. Klick på ”övrig ljus BTA” visar bakomliggande LBTA-utrymmen och detta anges i urvalslisten. Alla areakategorier överlappar fysiskt och ska inte summeras till en gemensam total.
+
+Egenskapen `Dimensions~Area` antas vara m²; användaren kan ändra egenskap och enhet. Saknade, noll, negativa eller ogiltiga areor blir inte noll: berörda summor och kvoter visas som —. En hämtad kategori utan objekt summerar däremot till noll. Saknade kategorier i äldre referenser förblir okända. Negativa restareor ritas inte som tårtbitar. Parkering och ekonomiska kalkyler ingår inte.
+
+Power BI:s generella BTA-mått söker på ”BTA”; denna version har den uttryckliga definitionen LBTA+MBTA. Projekt med andra BTA-kategorier behöver en utökad kategorimappning. Originalrapportens normalplansrubrik och nämnare var inte konsekventa; widgeten använder ljus BTA som nämnare i båda effektivitetsringarna.
 
 ## Datakoppling
 
-SDK:t ansluter till `window.parent`. `getProjectId()` och `getBuildingId()` läses vid varje hämtning. Inga projekt-ID:n, byggnads-ID:n, lösenord eller tokens är hårdkodade. StreamBIM gör autentiserade anrop via `makeApiRequest` i den befintliga användarsessionen.
+SDK:t ansluter till `window.parent`. `getProjectId()` och `getBuildingId()` läses vid hämtning och innan modellsynk. Inga projekt-ID:n, byggnads-ID:n, lösenord eller tokens är hårdkodade.
 
-Två sökningar görs: `Space` eller `Spatial zone`, där **Long Name innehåller ROK** respektive **LBTA**. Alla exporterade sidor hämtas från samma sök-ID. Projektbyte, upprepade sidor, ogiltiga svar och ofullständiga kända totaler ger fel i stället för missvisande nyckeltal. Hämtningen omfattar aktuell byggnad i projektet, alla plan, utan koppling till kamerans läge eller aktivt sökfilter. En synlig uppdatering måste göras efter modelländringar; widgeten är inte en kontinuerlig modellprenumeration.
+Fem sökningar görs via den autentiserade föräldrasessionens `makeApiRequest`: **Space eller Spatial zone**, med Long Name innehållande **ROK, LBTA, MBTA, LOFT respektive LOKAL**. Alla exportsidor hämtas från respektive sök-ID. En misslyckad kategori blir inte en tyst nolla. Överlappande kategorinamn, ofullständiga totaler, upprepade sidor och projektbyte ger ett fel. Uppdatera uttryckligen efter modelländringar; detta är inte en kontinuerlig modellprenumeration.
 
-| Nyckeltal     | Definition                                                                                   |
-| ------------- | -------------------------------------------------------------------------------------------- |
-| Lägenheter    | Antal exporterade ROK-objektrader, motsvarande Power BI:s `#LGH` (COUNT), inte DISTINCTCOUNT |
-| Lägenhetsarea | Summa giltiga `Dimensions~Area` för ROK                                                      |
-| Medelarea     | ROK-area / antal ROK-rader med giltig area                                                   |
-| Ljus BTA      | Summa giltiga `Dimensions~Area` för LBTA                                                     |
+## Filtersynk: åtgärd för försvinnande utrymmen
 
-Numeriska areor antas vara m² som i underlaget; det kan ändras till mm². Saknade, noll, negativa eller ogiltiga areor blir **inte noll**. Delsummor markeras. Även trapphusfiltret påverkar LBTA; utrymmen utan trapphus kan då falla bort.
+Den tidigare versionen utelämnade `@kind` från modellfrågan. StreamBIM använder denna regel för att aktivera utrymmesgeometrin. Varje OR-grupp innehåller nu GUID, tillgängliga Long Name- och plan-/trapphusegenskaper samt **@kind = Space eller Spatial zone**. Om exporten saknar typ används två alternativa grupper, aldrig två motstridiga typer i samma AND-grupp.
 
-Lägenhetsarea är inte hela BOA-måttet i PBIX (det måttet inkluderar också LOFT). LBTA är inte total BTA. MBTA, LOFT, LOA, parkering och projektspecifikt normalplan ingår inte i v1. Ingen ekonomisk kalkyl eller kontraktsuppgift har kopierats.
+Innan `applyObjectSearch({rules: [...]}, true)` skickas körs `getObjectInfoForSearch` med samma fråga. Den verifierar **antal rader och GUID-multipliciteter**, inklusive StreamBIMs eventuella klippning. Noll, avvikande GUID, ofullständigt svar eller projektbyte stoppar appliceringen med synligt fel. Statusen skiljer ”sökning skickad” från verifiering av resultatet före applicering; den påstår inte att en API-kvittens bevisar bestående rendering.
 
-## Verifiering och begränsningar
+**Tomt widgeturval lämnar föregående modellfilter kvar och visar detta tydligt.** StreamBIM kan stänga scenfiltreringen vid noll träffar, så widgeten skickar inte längre en tomresultatfråga som riskerar att återställa visningen. Urval över 5 000 rader eller utan GUID stoppas också; gränsen matchar klientens utrymmessökning.
 
-Beräkningar har jämförts med den lokala PBIX-filen. Den har 308 ROK-rader men 303 unika GUID och 59 LBTA-rader men 56 unika GUID. Den öppna StreamBIM-sökningen visade också **59 LBTA-utrymmen**, inte det föreslagna kontrollvärdet 50. Återkommande GUID behålls och flaggas, eftersom GUID ensamt inte säkert skiljer modeller åt. Kontrollera modellurvalet innan beslutsanvändning.
+Synkningen är på som standard och kan pausas. Ändringar samlas i 250 ms och skickas seriellt, med endast senaste väntande valet kvar. Ett skickat anrop kan inte återkallas. Ingen automatisk kameraflytt eller ändring av klippplan görs. **Visa hela urvalet** zoomar på begäran. Återanvända GUID med samma egenskaper i flera modeller kan inte alltid särskiljas; kontrollera även källmodellerna.
 
-Riktiga PBIX-referensdata har testats lokalt och användaren har bekräftat att den tidigare publicerade widgeten fungerar. API-kontraktet är baserat på SDK, StreamBIM-klientens implementation och Power Query i PBIX. Den nya filtersynkningen är testad med simulerade API-svar (inklusive snabba filterbyten, tomma urval och projektbyte); den behöver även kontrolleras i den inloggade StreamBIM-vyn.
+## Verifiering
 
-## Integritet
+Lokala beräkningar har jämförts med PBIX: 308 ROK-rader (303 unika GUID), 59 LBTA-rader (56 unika GUID), 14 MBTA-rader, 2 LOFT-rader och 6 LOKAL-rader. De föreslagna 50 LBTA-utrymmena stämmer inte med detta underlag; en tidigare kontroll i StreamBIM visade också 59.
 
-Inga projektdata medföljer publiceringen. HAR, PBIX, exporter, cookies och tokens läggs inte i Git. Referensimport läser JSON lokalt i webbläsaren, utan uppladdning. Ingen lokal lagring av projektdata, ingen telemetri och inget eget backendkonto används. GitHub Pages serverar bara statisk kod. Separat Sites-visning är privat och är inte avsedd som iframe-URL.
+Tester täcker KPI-formler, dataluckor, femkategorihämtning, diagramrendering, utrymmesregler, snabba filterbyten, tomma resultat, felaktiga träffar, dubbletter och projektbyte. Simulerade API-svar och lokal renderkontroll ersätter inte slutkontroll av den nya filtersynkningen i en inloggad StreamBIM-modell. Den äldre datahämtningen har bekräftats fungera av användaren.
+
+## Integritet och API-konsol
+
+Inga projektdata medföljer publiceringen. HAR, PBIX, referensexporter, cookies och tokens läggs inte i Git. Lokal referensimport laddar inte upp filen. Ingen telemetri, beständig lagring av projektdata eller eget backendkonto används.
+
+Konsolen behåller högst 60 anrop i minnet tills sidan laddas om eller loggen rensas. Den visar sökfrågor, status, tid och korta svarssammanfattningar. Känsliga fält och vanliga tokenformat maskeras; fullständiga lyckade objektsvar loggas inte. Projekt-ID, sökvärden och GUID förekommer i frågorna. Dela kopierade loggar med omsorg.
 
 ## Utveckling
 
-Node 22.13 eller senare:
+Node 22.13+ och npm 11.6.2 (samma som CI):
 
 ```sh
 npm ci
 npm test
 npx tsc --noEmit
+npm run lint
 npm run build:widget
 npm run dev
 ```
 
-`npm run build:widget` skapar statiska filer i `widget-dist/`, med relativa resurssökvägar för valfri hosting. `npm run build` bygger Sites-versionen. Samma React-komponent och beräkningskod används i båda. CI testar och publicerar `widget-dist` till GitHub Pages.
+`build:widget` skapar statiska filer med relativa resurslänkar i `widget-dist/`. GitHub Actions testar och publicerar dem till Pages. `npm run build` bygger den separata Sites-versionen; samma komponenter och beräkningar används.
 
-För privat jämförelse från PBIX (kräver endast lokalt `pip install pbixray`):
+Privat jämförelse från PBIX (lokalt installerat `pbixray`):
 
 ```sh
 python scripts/extract_reference.py INPUT.pbix work/reference.json
 ```
 
-Öppna sedan referensfilen i widgeten. Lokal utveckling erbjuder också knappen **Visa data från din PBIX-fil**. Den dev-endpointen tillåter bara loopback och finns inte i produktionsbygget. Referensläget använder `BIP_Namn~Beskrivning` i stället för Long Name eftersom Long Name saknas i den sparade PBIX-tabellen. Testet mot privat data hoppas över i CI när filen saknas.
+Importera referensen i widgeten eller välj dev-knappen **Visa data från din PBIX-fil**. Den dev-endpointen tillåter bara loopback och finns inte i produktionsbygget. PBIX-referensen använder `BIP_Namn~Beskrivning` när Long Name saknas i den sparade tabellen. Privata jämförelsetester hoppas över i CI när referensfilen saknas.
