@@ -1,9 +1,16 @@
 import { cell, defaultMapping, type Mapping, type RawRow } from "./metrics";
+import { traced } from "./diagnostics";
+import type { SelectionQuery } from "./selection";
 export type API = {
   getProjectId: () => Promise<string>;
   getBuildingId: () => Promise<string>;
   makeApiRequest: (request: Record<string, unknown>) => Promise<unknown>;
   gotoObject: (guid: string) => Promise<unknown>;
+  applyObjectSearch?: (
+    query: SelectionQuery,
+    replace?: boolean,
+  ) => Promise<unknown>;
+  zoomToSearchResult?: () => Promise<unknown>;
 };
 declare global {
   interface Window {
@@ -113,7 +120,9 @@ export function connect(): Promise<API> {
       );
     }
     // The SDK implementation expects the remote parent window (not window.self).
-    await timed(window.StreamBIM!.connectToParent(window.parent, {}), 20000);
+    await traced("StreamBIM.connectToParent", { origin: origin.origin }, () =>
+      timed(window.StreamBIM!.connectToParent(window.parent, {}), 20000),
+    );
     return window.StreamBIM!.API;
   })().catch((e) => {
     window.StreamBIM?._connection?.destroy();
@@ -144,18 +153,28 @@ export async function fetchCategory(
   onProgress: (text: string) => void,
 ) {
   const root = `/project-${encodeURIComponent(projectId)}/api/v1/ifc-searches`;
-  const request = async (url: string, method = "GET", body?: unknown) =>
-    parsed(
-      await timed(
-        api.makeApiRequest({
-          url,
-          method,
-          ...(body ? { body } : {}),
-          accept: "application/json",
-          contentType: "application/json",
-        }),
-      ),
+  const request = async (url: string, method = "GET", body?: unknown) => {
+    const args = {
+      url,
+      method,
+      ...(body ? { body } : {}),
+      accept: "application/json",
+      contentType: "application/json",
+    };
+    return traced(
+      `${method} ${url.split("?")[0]}`,
+      args,
+      async () => parsed(await timed(api.makeApiRequest(args))),
+      (result) => {
+        const meta = result.meta as Record<string, unknown> | undefined;
+        return {
+          searchId: result.searchId,
+          rows: Array.isArray(result.data) ? result.data.length : undefined,
+          total: meta?.total ?? meta?.totalCount,
+        };
+      },
     );
+  };
   const search = await request(root, "POST", searchRules(buildingId, keyword));
   if (!search.searchId) throw new Error(`${keyword}: sökningen saknar sök-ID.`);
   const rows: RawRow[] = [];

@@ -15,6 +15,38 @@ Lägg URL:en som widget i StreamBIM. Domänen måste vara tillåten och widgeten
 - Filter för våningsplan och trapphus, sökbar objektlista, lokal CSV-export och navigering till objekt i live-läge.
 - Datakontroll för saknad area, återkommande GUID och valfria förväntade objektantal.
 - Anpassningsbara egenskaper för area, plan, trapphus och areaenhet.
+- Utfällbar API-konsol med fråge-JSON, status, svarstid, kopiering och rensning.
+- Automatisk koppling från widgetens filter till StreamBIMs aktiva objektsökning.
+- Resonas logotyp och webbpalett: sand, grågrönt, varmgrått och mörk text. Systemtypsnitt används; inga kommersiella fontfiler distribueras.
+
+## Filterkoppling (uppdatering 1.1)
+
+**Synka filter med StreamBIM** är på som standard i live-läge och kan pausas.
+Plan och trapphus synkas tillsammans. I objektlistan synkas också söktext och
+ROK/LBTA-val. Hela det filtrerade urvalet skickas, inte bara listans aktuella
+40-raderssida. I areavyn synkas LBTA; i översikt och datakontroll synkas ROK + LBTA.
+Nyckeltalen följer plan och trapphus, inte objektlistans fritextsökning.
+
+`StreamBIM.API.applyObjectSearch({rules: [...]}, true)` ersätter den aktiva
+sökningen. Varje objekt uttrycks som en AND-grupp med `@guid`, Long Name och
+tillgängliga plan-/trapphusegenskaper; grupperna kombineras med OR. Ingen
+kameraförflyttning sker automatiskt. **Visa hela urvalet** zoomar på begäran.
+Inställningen för hur objekt utanför urvalet visas behålls i StreamBIM.
+Återställning visar hela urvalet i aktuell widgetvy, inte andra objekttyper.
+
+Snabba ändringar samlas i 250 ms och skickas i ordning, med endast det senaste
+väntande valet kvar. Ett redan skickat anrop måste slutföras innan nästa skickas;
+paus kan inte återkalla ett sådant anrop. Projekt/byggnad kontrolleras före anropet.
+Tomt urval skickar två motstridiga GUID-villkor (inga träffar). Saknade GUID eller
+över 10 000 rader stoppar synkningen med ett synligt fel i stället för delurval.
+Återanvända GUID med identiska egenskaper i olika modeller kan inte säkert
+särskiljas. Jämför därför objektrader, unika GUID och egenskaper vid verifiering.
+
+Konsolen visar datahämtningens POST-/GET-anrop och modellens sök-/zoom-anrop,
+med frågorna, tidsåtgång och korta svarssammanfattningar. Den behåller högst
+60 anrop i minnet tills sidan laddas om eller loggen rensas. Känsliga fält och
+vanliga tokenformat maskeras; fullständiga lyckade objektsvar loggas inte.
+Projekt-ID, sökvärden och GUID finns i frågorna. Kopiera/dela loggen med omsorg.
 
 ## Datakoppling
 
@@ -37,7 +69,7 @@ Lägenhetsarea är inte hela BOA-måttet i PBIX (det måttet inkluderar också L
 
 Beräkningar har jämförts med den lokala PBIX-filen. Den har 308 ROK-rader men 303 unika GUID och 59 LBTA-rader men 56 unika GUID. Den öppna StreamBIM-sökningen visade också **59 LBTA-utrymmen**, inte det föreslagna kontrollvärdet 50. Återkommande GUID behålls och flaggas, eftersom GUID ensamt inte säkert skiljer modeller åt. Kontrollera modellurvalet innan beslutsanvändning.
 
-Riktiga PBIX-referensdata har testats lokalt. Den fullständiga iframe-kopplingen måste slutverifieras genom att widget-URL:en öppnas som godkänd widget i StreamBIM. API-kontraktet är baserat på SDK, StreamBIM-klientens implementation och Power Query i PBIX. Sökresultatets 59 LBTA har kontrollerats i den inloggade projektvyn; det är inte ett påstående om att widgetens liveanrop redan har körts där.
+Riktiga PBIX-referensdata har testats lokalt och användaren har bekräftat att den tidigare publicerade widgeten fungerar. API-kontraktet är baserat på SDK, StreamBIM-klientens implementation och Power Query i PBIX. Den nya filtersynkningen är testad med simulerade API-svar (inklusive snabba filterbyten, tomma urval och projektbyte); den behöver även kontrolleras i den inloggade StreamBIM-vyn.
 
 ## Integritet
 

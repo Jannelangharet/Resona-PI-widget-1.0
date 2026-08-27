@@ -11,6 +11,9 @@ import {
   type Space,
 } from "../lib/metrics";
 import { connect, fetchDataset, timed, type Dataset } from "../lib/streambim";
+import ApiConsole from "./api-console";
+import ModelSync from "./model-sync";
+import { traced } from "../lib/diagnostics";
 
 const number = (v: number | null, d = 0) =>
   v === null
@@ -19,7 +22,7 @@ const number = (v: number | null, d = 0) =>
         maximumFractionDigits: d,
         minimumFractionDigits: d,
       }).format(v);
-const colors = ["#284f43", "#73936b", "#9db586", "#c4d79f", "#dfedc0"];
+const colors = ["#54665c", "#68827c", "#a4b3ac", "#d1ccc4", "#ffe899"];
 export default function Dashboard() {
   const [data, setData] = useState<Dataset | null>(null),
     [busy, setBusy] = useState(false),
@@ -114,7 +117,10 @@ export default function Dashboard() {
         }
       })();
     }, 15000);
-    return () => { active = false; clearInterval(timer); };
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [data]);
   const rok = data
     ? normalizeRows(data.rok, "ROK", mapping, data.source === "reference")
@@ -207,7 +213,9 @@ export default function Dashboard() {
         String(await api.getBuildingId()) !== data.buildingId
       )
         throw new Error("Projektet har bytts. Uppdatera först.");
-      await timed(api.gotoObject(row.guid));
+      await traced("StreamBIM.API.gotoObject", { guid: row.guid }, () =>
+        timed(api.gotoObject(row.guid)),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Kunde inte visa objektet.");
     }
@@ -222,9 +230,16 @@ export default function Dashboard() {
     <main className="shell">
       <header>
         <div className="brand">
-          resona<span>AB</span>
+          {/* Official supplied brand asset, served locally without third-party tracking. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="./brand/resona-logo.svg"
+            alt="Resona"
+            width="190"
+            height="36"
+          />
         </div>
-        <span className="version">PI WIDGET / 1.0</span>
+        <span className="version">PROJEKTINSIKT / 1.1</span>
       </header>
       <section className="heading">
         <div>
@@ -232,7 +247,7 @@ export default function Dashboard() {
           <h1>Modellen i siffror.</h1>
           <p>
             {data
-              ? `${data.projectName || `Projekt ${data.projectId}`}${data.buildingId === 'not-recorded' ? '' : ` · Byggnad ${data.buildingId}`}`
+              ? `${data.projectName || `Projekt ${data.projectId}`}${data.buildingId === "not-recorded" ? "" : ` · Byggnad ${data.buildingId}`}`
               : "Lägenheter, ytor och fördelning. Direkt från ditt projekt."}
           </p>
         </div>
@@ -370,6 +385,24 @@ export default function Dashboard() {
             : "Inväntar data"}
         </span>
       </div>
+      <ModelSync
+        data={data}
+        rows={
+          tab === "Lägenheter"
+            ? tableRows
+            : tab === "Areor per plan"
+              ? areas
+              : filtered
+        }
+        mapping={mapping}
+        scope={
+          tab === "Lägenheter"
+            ? "Objektlistan"
+            : tab === "Areor per plan"
+              ? "LBTA per plan"
+              : "ROK + LBTA"
+        }
+      />
       <section className="metrics">
         {[
           [
@@ -509,6 +542,7 @@ export default function Dashboard() {
                     key={g.label}
                     onClick={() => {
                       setStair(g.label);
+                      setCategory("ROK");
                       setTab("Lägenheter");
                     }}
                   >
@@ -824,6 +858,7 @@ export default function Dashboard() {
           </article>
         </section>
       )}
+      <ApiConsole />
       <footer>
         <span>RESONA AB · Första version</span>
         <span>Din modell. Dina data. Utan Power BI.</span>
