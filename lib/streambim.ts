@@ -6,7 +6,7 @@ import {
   type Mapping,
   type RawRow,
 } from "./metrics";
-import { traced } from "./diagnostics";
+import { errorMessage, traced } from "./diagnostics";
 import type { SelectionQuery } from "./selection";
 export type API = {
   getProjectId: () => Promise<string>;
@@ -18,11 +18,7 @@ export type API = {
     replace?: boolean,
   ) => Promise<unknown>;
   zoomToSearchResult?: () => Promise<unknown>;
-  getObjectInfoForSearch?: (request: {
-    filter: SelectionQuery;
-    page: { limit: number; skip: number };
-    fieldUnion: boolean;
-  }) => Promise<unknown>;
+  getViewportState?: () => Promise<unknown>;
 };
 declare global {
   interface Window {
@@ -153,33 +149,21 @@ function parsed(value: unknown): Record<string, unknown> {
     throw new Error("Oväntat svar från StreamBIM.");
   return v as Record<string, unknown>;
 }
-function base64(s: string) {
+export function base64(s: string) {
   return btoa(
     Array.from(new TextEncoder().encode(s), (b) => String.fromCharCode(b)).join(
       "",
     ),
   );
 }
-export async function fetchCategory(
-  api: API,
-  projectId: string,
-  buildingId: string,
-  keyword: Category,
-  mapping: Mapping,
-  onProgress: (text: string) => void,
-) {
-  const root = `/project-${encodeURIComponent(projectId)}/api/v1/ifc-searches`;
-  const request = async (url: string, method = "GET", body?: unknown) => {
-    const args = {
-      url,
-      method,
-      ...(body ? { body } : {}),
-      accept: "application/json",
-      contentType: "application/json",
-    };
-    return traced(
-      `${method} ${url.split("?")[0]}`,
-      args,
+export async function requestJson(api: API, url: string, method = "GET", body?: unknown) {
+  const args = {
+    url, method, ...(body ? { body } : {}),
+    accept: "application/json", contentType: "application/json",
+  };
+  try {
+    return await traced(
+      `${method} ${url.split("?")[0]}`, args,
       async () => parsed(await timed(api.makeApiRequest(args))),
       (result) => {
         const meta = result.meta as Record<string, unknown> | undefined;
@@ -190,7 +174,21 @@ export async function fetchCategory(
         };
       },
     );
-  };
+  } catch (error) {
+    throw new Error(`${method} ${url.split("?")[0]}: ${errorMessage(error)}. Se API-konsolen.`);
+  }
+}
+export async function fetchCategory(
+  api: API,
+  projectId: string,
+  buildingId: string,
+  keyword: Category,
+  mapping: Mapping,
+  onProgress: (text: string) => void,
+) {
+  const root = `/project-${encodeURIComponent(projectId)}/api/v1/ifc-searches`;
+  const request = (url: string, method = "GET", body?: unknown) =>
+    requestJson(api, url, method, body);
   const search = await request(root, "POST", searchRules(buildingId, keyword));
   if (!search.searchId) throw new Error(`${keyword}: sökningen saknar sök-ID.`);
   const rows: RawRow[] = [];

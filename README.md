@@ -1,6 +1,6 @@
 # Resona PI widget 1.0
 
-Projektoberoende projektinsikt för **Resona AB**, direkt från StreamBIM utan Power BI i drift. Uppdatering **1.2**.
+Projektoberoende projektinsikt för **Resona AB**, direkt från StreamBIM utan Power BI i drift. Uppdatering **1.2.1**.
 
 ## Widget-URL
 
@@ -52,7 +52,9 @@ Fem sökningar görs via den autentiserade föräldrasessionens `makeApiRequest`
 
 Den tidigare versionen utelämnade `@kind` från modellfrågan. StreamBIM använder denna regel för att aktivera utrymmesgeometrin. Varje OR-grupp innehåller nu GUID, tillgängliga Long Name- och plan-/trapphusegenskaper samt **@kind = Space eller Spatial zone**. Om exporten saknar typ används två alternativa grupper, aldrig två motstridiga typer i samma AND-grupp.
 
-Innan `applyObjectSearch({rules: [...]}, true)` skickas körs `getObjectInfoForSearch` med samma fråga. Den verifierar **antal rader och GUID-multipliciteter**, inklusive StreamBIMs eventuella klippning. Noll, avvikande GUID, ofullständigt svar eller projektbyte stoppar appliceringen med synligt fel. Statusen skiljer ”sökning skickad” från verifiering av resultatet före applicering; den påstår inte att en API-kvittens bevisar bestående rendering.
+Innan `applyObjectSearch({rules: [...]}, true)` skickas verifieras **antal rader och GUID-multipliciteter** via samma direkta `makeApiRequest`-sökning/export som datahämtningen. Exporten begränsas till GUID/ID, sorteras uttryckligen på ID och pagineras till komplett resultat. `getViewportState` läser klippplan; kontrollsökningen får samma `Clipping planes`-regel som StreamBIM själv lägger till. Klippningen läses igen före applicering och ändras aldrig av widgeten. Noll, avvikande GUID, ofullständigt svar, ändrad klippning eller projektbyte stoppar appliceringen med synligt fel. Statusen skiljer ”sökning skickad” från verifiering av resultatet före applicering; den påstår inte att en API-kvittens bevisar bestående rendering.
+
+Version 1.2.1 undviker `getObjectInfoForSearch`: den rapporterade felloggen kom från detta försteg med `{code: "unknown", debug: null}`, inte från själva appliceringen. Den granskade StreamBIM-klienten kan tappa det ursprungliga felet i sin interna viewer-sökning och skickar dessutom `sortField=undefined` när sortering utelämnas. Loggen ensam visar inte vilket underliggande fel som inträffade. Den direkta vägen undviker dessa problem och loggar varje HTTP-steg samt tillgänglig serverstatus/feltext; inget filter appliceras om verifieringen misslyckas.
 
 **Tomt widgeturval lämnar föregående modellfilter kvar och visar detta tydligt.** StreamBIM kan stänga scenfiltreringen vid noll träffar, så widgeten skickar inte längre en tomresultatfråga som riskerar att återställa visningen. Urval över 5 000 rader eller utan GUID stoppas också; gränsen matchar klientens utrymmessökning.
 

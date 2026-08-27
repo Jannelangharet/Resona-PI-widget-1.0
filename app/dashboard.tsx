@@ -298,7 +298,7 @@ export default function Dashboard() {
             height="36"
           />
         </div>
-        <span className="version">PROJEKTINSIKT / 1.2</span>
+        <span className="version">PROJEKTINSIKT / 1.2.1</span>
       </header>
       <section className="heading">
         <div>

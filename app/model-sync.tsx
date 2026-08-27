@@ -8,7 +8,7 @@ import {
   selectionQuery,
   type SelectionQuery,
 } from "../lib/selection";
-import { traced } from "../lib/diagnostics";
+import { errorMessage, traced } from "../lib/diagnostics";
 export default function ModelSync({
   data,
   rows,
@@ -91,10 +91,7 @@ export default function ModelSync({
               setStatus({
                 key: syncKey,
                 state: "error",
-                text:
-                  e instanceof Error
-                    ? e.message
-                    : "Kunde inte synkronisera filtret. Se API-konsolen.",
+                text: `${errorMessage(e)} Modellfiltret kunde inte bekräftas. Se API-konsolen.`,
               });
           } finally {
             clearTimeout(slow);

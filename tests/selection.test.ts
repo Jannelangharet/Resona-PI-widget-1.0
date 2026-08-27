@@ -4,6 +4,19 @@ import { applySelection, latestQueue, selectionQuery } from "../lib/selection";
 import { defaultMapping, normalizeRows } from "../lib/metrics";
 import { type API } from "../lib/streambim";
 import { clearLogs, getLogs } from "../lib/diagnostics";
+function searchAPI(reply: () => unknown | Promise<unknown>, onSearch?: (body: { rules: unknown[] }) => void) {
+  return {
+    getViewportState: async () => ({ clippingPlanes: [] }),
+    makeApiRequest: async (req: Record<string, unknown>) => {
+      if (req.method === "POST") {
+        onSearch?.(req.body as { rules: unknown[] });
+        return { searchId: "test-search" };
+      }
+      const skip = new URL(String(req.url), "https://example.test").searchParams.get("page[skip]");
+      return skip === "0" ? await reply() : { data: [] };
+    },
+  };
+}
 const rows = normalizeRows(
   Array.from({ length: 308 }, (_, i) => ({
     GUID: `guid-${i}`,
@@ -73,7 +86,7 @@ test("Mutation checks project/building and stale work; applies exact root query 
   const api = {
     getProjectId: async () => "p",
     getBuildingId: async () => "b",
-    getObjectInfoForSearch: async () => ({ data: [{ GUID: rows[0].guid }] }),
+    ...searchAPI(() => ({ data: [{ GUID: rows[0].guid }] })),
     applyObjectSearch: async (...args: unknown[]) => {
       calls.push(args);
       return true;
@@ -105,7 +118,7 @@ test("Failed RPC is surfaced in console and absence of API is not silently ignor
     getProjectId: async () => "p",
     getBuildingId: async () => "b",
     applyObjectSearch: async () => false,
-    getObjectInfoForSearch: async () => ({ data: [{ GUID: rows[0].guid }] }),
+    ...searchAPI(() => ({ data: [{ GUID: rows[0].guid }] })),
   } as unknown as API;
   const q = selectionQuery([rows[0]], "b", defaultMapping);
   await assert.rejects(
@@ -203,6 +216,7 @@ test("No mutation on zero, wrong, clipped, malformed, incomplete or duplicate-mi
   const api = {
     getProjectId: async () => "p",
     getBuildingId: async () => "b",
+    getViewportState: async () => ({ clippingPlanes: [] }),
     applyObjectSearch: async () => {
       mutations++;
       return true;
@@ -218,7 +232,7 @@ test("No mutation on zero, wrong, clipped, malformed, incomplete or duplicate-mi
     { data: [{ GUID: rows[0].guid }], meta: { total: 2 } },
     { data: [{ GUID: rows[0].guid }, { GUID: rows[0].guid }] },
   ]) {
-    api.getObjectInfoForSearch = async () => response;
+    api.makeApiRequest = searchAPI(() => response).makeApiRequest;
     await assert.rejects(
       applySelection(api, "p", "b", q, () => true, [rows[0]]),
     );
@@ -234,8 +248,7 @@ test("Preflight compares GUID multiplicities, protects query from SDK mutation a
   const api = {
     getProjectId: async () => "p",
     getBuildingId: async () => "b",
-    getObjectInfoForSearch: async (req: { filter: { rules: unknown[] } }) => {
-      req.filter.rules = [];
+    ...searchAPI(() => {
       return JSON.stringify({
         data: [
           { GUID: rows[1].guid },
@@ -243,7 +256,7 @@ test("Preflight compares GUID multiplicities, protects query from SDK mutation a
           { GUID: rows[0].guid },
         ],
       });
-    },
+    }, (body) => { body.rules = []; }),
     applyObjectSearch: async () => {
       mutations++;
       return true;
@@ -254,10 +267,10 @@ test("Preflight compares GUID multiplicities, protects query from SDK mutation a
     { matchedRows: 3 },
   );
   assert.equal(JSON.stringify(q), before);
-  api.getObjectInfoForSearch = async () => {
+  api.makeApiRequest = searchAPI(() => {
     current = false;
     return { data: selected.map((r) => ({ GUID: r.guid })) };
-  };
+  }).makeApiRequest;
   assert.equal(
     await applySelection(api, "p", "b", q, () => current, selected),
     false,
@@ -270,10 +283,10 @@ test("A project switch during preflight prevents applying the old filter", async
   const api = {
     getProjectId: async () => project,
     getBuildingId: async () => "b",
-    getObjectInfoForSearch: async () => {
+    ...searchAPI(() => {
       project = "new";
       return { data: [{ GUID: rows[0].guid }] };
-    },
+    }),
     applyObjectSearch: async () => {
       mutations++;
       return true;

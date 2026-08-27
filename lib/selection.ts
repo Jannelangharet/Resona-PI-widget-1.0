@@ -1,6 +1,7 @@
 import { cell, type Mapping, type Space } from "./metrics";
 import { type API, timed } from "./streambim";
 import { traced } from "./diagnostics";
+import { clippingValue, selectionResults } from "./search-verification";
 export type Rule = {
   buildingId: string;
   propKey: string;
@@ -77,31 +78,18 @@ export async function applySelection(
   if (!isCurrent()) return false;
   if (!api.applyObjectSearch)
     throw new Error("StreamBIM-versionen saknar applyObjectSearch.");
-  if (!api.getObjectInfoForSearch)
-    throw new Error(
-      "StreamBIM saknar sökverifiering. Modellfiltret lämnas oförändrat.",
-    );
+  const clipping = await clippingValue(api);
+  if (!isCurrent()) return false;
   const preflight = {
-    filter: structuredClone(query),
-    page: { limit: 5000, skip: 0 },
-    fieldUnion: true,
+    query,
+    clippingPlanes: clipping,
+    expectedRows: expectedRows.length,
   };
   const matched = await traced(
-    "StreamBIM.API.getObjectInfoForSearch · verifiering",
+    "Direkt API-sökning · verifiering av modellurval",
     preflight,
     async () => {
-      const raw = await timed(api.getObjectInfoForSearch!(preflight));
-      const result = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (!result || !Array.isArray(result.data))
-        throw new Error(
-          "Sökverifieringen saknar objektlista. Modellfiltret lämnas oförändrat.",
-        );
-      const actual: unknown[] = result.data;
-      const total = result.meta?.total ?? result.meta?.totalCount;
-      if (total != null && Number(total) !== actual.length)
-        throw new Error("Sökverifieringen är ofullständig. Begränsa urvalet.");
-      if (actual.some((r) => !r || typeof r !== "object" || Array.isArray(r)))
-        throw new Error("Ogiltigt söksvar från StreamBIM.");
+      const actual = await selectionResults(api, projectId, buildingId, query, clipping, expectedRows.length);
       const counts = (guids: string[]) => {
         const map = new Map<string, number>();
         for (const guid of guids) map.set(guid, (map.get(guid) || 0) + 1);
@@ -127,6 +115,8 @@ export async function applySelection(
     }),
   );
   if (!isCurrent()) return false;
+  if (await clippingValue(api) !== clipping)
+    throw new Error("Klippningen ändrades under verifieringen. Försök igen. Modellfiltret lämnas oförändrat.");
   if (
     String(await timed(api.getProjectId())) !== projectId ||
     String(await timed(api.getBuildingId())) !== buildingId
@@ -141,7 +131,7 @@ export async function applySelection(
     "StreamBIM.API.applyObjectSearch",
     { query, replace: true },
     async () => {
-      const result = await api.applyObjectSearch!(query, true);
+      const result = await api.applyObjectSearch!(structuredClone(query), true);
       if (result === false)
         throw new Error("StreamBIM accepterade inte filterfrågan.");
       return result;

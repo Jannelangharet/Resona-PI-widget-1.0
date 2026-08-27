@@ -33,6 +33,28 @@ export function sanitize(value: unknown, depth = 0): unknown {
   return value;
 }
 export const getLogs = () => entries;
+// RPC errors are often plain objects, not Error instances. Preserve useful server details.
+export function errorMessage(error: unknown, depth = 0): string {
+  if (depth > 4) return "StreamBIM kunde inte slutföra anropet";
+  if (error instanceof Error) return String(sanitize(error.message)).slice(0, 800);
+  if (typeof error === "string") {
+    try { return errorMessage(JSON.parse(error), depth + 1); } catch { /* plain text */ }
+    return String(sanitize(error)).slice(0, 800);
+  }
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    const status = value.status ?? value.statusCode;
+    const prefix = status ? `HTTP ${status}: ` : "";
+    if (Array.isArray(value.errors) && value.errors.length)
+      return prefix + errorMessage(value.errors[0], depth + 1);
+    if (value.responseText) return prefix + errorMessage(value.responseText, depth + 1);
+    const detail = value.detail ?? value.message ?? value.title;
+    if (detail) return prefix + errorMessage(detail, depth + 1);
+    if (value.code) return prefix + `StreamBIM-fel: ${String(sanitize(value.code))}`;
+    if (status) return `HTTP ${status}: StreamBIM kunde inte slutföra anropet`;
+  }
+  return "StreamBIM kunde inte slutföra anropet";
+}
 export const clearLogs = () => {
   entries = [];
   emit();
@@ -81,12 +103,8 @@ export async function traced<T>(
     return result;
   } catch (e) {
     finish("error", {
-      message:
-        e instanceof Error
-          ? e.message
-          : typeof e === "object" && e !== null
-            ? e
-            : "API-anropet misslyckades",
+      message: errorMessage(e),
+      details: e instanceof Error ? undefined : e,
     });
     throw e;
   }
